@@ -1,0 +1,79 @@
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.tree import DecisionTreeClassifier, plot_tree
+from sklearn.metrics import (
+    classification_report, confusion_matrix, accuracy_score, roc_auc_score, roc_curve
+)
+import matplotlib.pyplot as plt
+
+# 1. Load and clean data
+url = "https://raw.githubusercontent.com/jbrownlee/Datasets/master/pima-indians-diabetes.data.csv"
+columns = [
+    'Pregnancies', 'Glucose', 'BloodPressure', 'SkinThickness', 
+    'Insulin', 'BMI', 'DiabetesPedigreeFunction', 'Age', 'Outcome'
+]
+df = pd.read_csv(url, names=columns)
+
+# 2. Check for missing values (0's used as missing in some columns)
+cols_with_missing = ['Glucose', 'BloodPressure', 'SkinThickness', 'Insulin', 'BMI']
+for col in cols_with_missing:
+    df[col].replace(0, np.nan, inplace=True)
+    df[col].fillna(df[col].median(), inplace=True)
+
+# 3. Split features and target
+X = df.drop(columns=['Outcome'])
+y = df['Outcome']
+
+# 4. Stratified train-test split
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42, stratify=y
+)
+
+# 5. Hyperparameter tuning with class balancing
+grid = GridSearchCV(
+    DecisionTreeClassifier(random_state=42, class_weight='balanced'),
+    param_grid={'max_depth': [3, 5, 10], 'min_samples_leaf': [5, 10]},
+    cv=5, scoring='roc_auc', n_jobs=-1
+)
+grid.fit(X_train, y_train)
+clf = grid.best_estimator_
+
+# 6. Evaluation
+y_pred = clf.predict(X_test)
+y_proba = clf.predict_proba(X_test)[:, 1]
+
+print("Best params:", grid.best_params_)
+print(f"Accuracy: {accuracy_score(y_test, y_pred):.3f}")
+print("ROC-AUC:", roc_auc_score(y_test, y_proba))
+print("Confusion matrix:\n", confusion_matrix(y_test, y_pred))
+print("Classification report:\n", classification_report(y_test, y_pred))
+
+# 7. ROC curve
+fpr, tpr, _ = roc_curve(y_test, y_proba)
+plt.figure(figsize=(6, 4))
+plt.plot(fpr, tpr, label=f"AUC = {roc_auc_score(y_test, y_proba):.3f}")
+plt.plot([0, 1], [0, 1], '--', color='gray')
+plt.xlabel('False Positive Rate')
+plt.ylabel('True Positive Rate')
+plt.title('ROC Curve')
+plt.legend()
+plt.show()
+
+# 8. Visualize top of tree
+plt.figure(figsize=(18, 8))
+plot_tree(clf, feature_names=X.columns, class_names=['No Diabetes', 'Diabetes'],
+          filled=True, max_depth=3, fontsize=10)
+plt.title("Top Levels of Decision Tree")
+plt.show()
+
+# 9. Feature importances
+importances = pd.Series(clf.feature_importances_, index=X.columns)
+top10 = importances.nlargest(10)
+print("Top 10 features:\n", top10)
+
+plt.figure(figsize=(8, 6))
+top10.plot(kind='barh', color='orange')
+plt.gca().invert_yaxis()
+plt.title("Top 10 Feature Importances")
+plt.show()
